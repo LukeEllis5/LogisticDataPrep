@@ -1,0 +1,70 @@
+import pandas as pd
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# Load data from an Excel file
+data = pd.read_excel(r'L:File Path\\Folder\\Account Data')
+
+# Check for null values in the dataset
+null_values = data.isnull().sum()
+print(null_values)
+
+# Combine original files from the folder, add a prefix to user IDs to match our data, and return the combined DataFrame
+def combine_original_files(folder_path, prefix):
+    original_files = os.listdir(folder_path)
+    combined_df_list = [
+        pd.read_excel(os.path.join(folder_path, file))
+        for file in original_files if file.startswith('account_name')
+    ]
+    combined_df = pd.concat(combined_df_list, ignore_index=True)
+    combined_df['user_ID'] = combined_df['user_ID'].map(lambda x: prefix + str(x))
+    return combined_df
+
+# Merge the main data with the combined original data on 'user_ID'
+combined_df = combine_original_files('L:File Path/ Original Folder', '755_')
+data_df = pd.merge(data, combined_df, on='user_ID', how='left')
+
+# Recheck for null values after merging the data
+null_values = data_df.isnull().sum()
+print(null_values)
+
+# Replace missing values in the specified column with the median value using SimpleImputer
+data_df['column_name'] = SimpleImputer(strategy='median').fit_transform(data_df[['column_name']])
+
+# Create a binary target variable based on the presence of a timestamp in the 'closed_date' column
+data_df['closed'] = data_df['closed_date'].apply(lambda x: 1 if isinstance(x, pd.Timestamp) else 0)
+
+# Drop columns that are not needed for the model
+drop_columns = ['date', 'closed_date', 'name', 'address']
+data_ready = data_df.drop(columns=drop_columns)
+
+# Define features (X) and the target variable (y)
+X = data_ready.drop('closed', axis=1)
+y = data_ready['closed']
+
+# Split data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Initialize and train a Logistic Regression model
+model = LogisticRegression(random_state=42, max_iter=1000)
+model.fit(X_train, y_train)
+
+# Predict probabilities and evaluate model performance
+y_prob = model.predict_proba(X_test)[:, 1]
+y_pred = model.predict(X_test)
+
+# Calculate and print performance metrics
+accuracy = accuracy_score(y_test, y_pred)
+conf_matrix = confusion_matrix(y_test, y_pred)
+class_report = classification_report(y_test, y_pred, digits=4)
+
+print('Accuracy:', round(accuracy, 4))
+print('Confusion Matrix:\n', conf_matrix)
+print('Classification Report:\n', class_report)
+
+# Calculate and print the overall probability of closing for the test set
+overall_closing_prob = np.mean(y_prob)
+print('Overall probability of closing:', round(overall_closing_prob, 4))
